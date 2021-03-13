@@ -61,10 +61,11 @@ const tableFormat = `Path	Packages	Files	Lines	Global Vars	Constants	Interfaces	
 `
 
 var rootCmd = &cobra.Command{
-	Use:   "gomental path",
-	Short: "Displays details about the golang source at the given path",
-	Args:  cobra.ExactArgs(1),
-	Run:   runRoot,
+	Use:     "gomental path",
+	Short:   "Displays details about the golang source at the given path",
+	Example: "gomental my_source_path -d 0 --with-tests",
+	Args:    cobra.ExactArgs(1),
+	Run:     runRoot,
 }
 
 func Execute() {
