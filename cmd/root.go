@@ -28,7 +28,9 @@ import (
 
 type MentalCtx struct {
 	Path       string
+	Pkgs       int
 	Files      int
+	Lines      int
 	Globals    int
 	Consts     int
 	Interfaces int
@@ -36,7 +38,6 @@ type MentalCtx struct {
 	Others     int
 	Methods    int
 	Funcs      int
-	Lines      int
 }
 
 type mentalSort []MentalCtx
@@ -51,18 +52,17 @@ var skip = map[string]struct{}{
 }
 
 var userMaxDepth = 1
-var userSkip = []string{}
+var userSkip []string
 var userNoZero = false
 
-const tableFormat = `Path	Files	Lines	Global Vars	Constants	Interfaces	Structs	Other Types	Methods	Funcs
-{{ range . }}{{ .Path }}	{{ .Files }}	{{ .Lines }}	{{ .Globals }}	{{ .Consts }}	{{ .Interfaces }}	{{ .Structs }}	{{ .Others }}	{{ .Methods }}	{{ .Funcs }}
+const tableFormat = `Path	Packages	Files	Lines	Global Vars	Constants	Interfaces	Structs	Other Types	Methods	Funcs
+{{ range . }}{{ .Path }}	{{ .Pkgs }}	{{ .Files }}	{{ .Lines }}	{{ .Globals }}	{{ .Consts }}	{{ .Interfaces }}	{{ .Structs }}	{{ .Others }}	{{ .Methods }}	{{ .Funcs }}
 {{ end }}
 `
 
 var rootCmd = &cobra.Command{
 	Use:   "gomental path",
-	Short: "TODO short",
-	Long:  `TODO long`,
+	Short: "Displays details about the golang source at the given path",
 	Args:  cobra.ExactArgs(1),
 	Run:   runRoot,
 }
@@ -99,7 +99,7 @@ func runRoot(_ *cobra.Command, args []string) {
 		}
 	}
 
-	rootPath := filepath.Clean(args[0])
+	rootPath := filepath.Clean(args[0]) + string(filepath.Separator)
 
 	mentalMap := make(map[string]*MentalCtx)
 
@@ -117,29 +117,28 @@ func runRoot(_ *cobra.Command, args []string) {
 			return nil
 		}
 
-		parts := strings.SplitN(strings.TrimPrefix(path, rootPath), string(filepath.Separator), userMaxDepth+2)
+		parts := strings.SplitN(strings.TrimPrefix(path, rootPath), string(filepath.Separator), userMaxDepth+1)
 
-		depth := userMaxDepth + 1
+		depth := userMaxDepth
 		if len(parts) < depth {
 			depth = len(parts)
 		}
 
-		workingPath := string(filepath.Separator)
-		for _, s := range parts[0:depth] {
-			workingPath = filepath.Join(workingPath, s)
-			if _, exists := mentalMap[workingPath]; !exists {
-				mentalMap[workingPath] = &MentalCtx{
-					Path: workingPath,
-				}
+		workingPath := string(filepath.Separator) + filepath.Join(parts[0:depth]...)
+		if _, exists := mentalMap[workingPath]; !exists {
+			mentalMap[workingPath] = &MentalCtx{
+				Path: workingPath,
 			}
-
-			ctx, err := parseDir(path)
-			if err != nil {
-				return err
-			}
-
-			mentalMap[workingPath].sum(ctx)
 		}
+
+		var ctx MentalCtx
+
+		ctx, err = parseDir(path)
+		if err != nil {
+			return err
+		}
+
+		mentalMap[workingPath].sum(ctx)
 
 		return nil
 	})
@@ -189,6 +188,7 @@ func parseDir(path string) (MentalCtx, error) {
 	}
 
 	for _, pkg := range pkgs {
+		ctx.Pkgs++
 		ctx.Files += len(pkg.Files)
 		for _, file := range pkg.Files {
 			for _, decl := range file.Decls {
@@ -243,6 +243,8 @@ func parseDir(path string) (MentalCtx, error) {
 }
 
 func (c *MentalCtx) sum(other MentalCtx) {
+	c.Pkgs += other.Pkgs
+	c.Lines += other.Lines
 	c.Files += other.Files
 	c.Globals += other.Globals
 	c.Consts += other.Consts
@@ -251,7 +253,6 @@ func (c *MentalCtx) sum(other MentalCtx) {
 	c.Others += other.Others
 	c.Methods += other.Methods
 	c.Funcs += other.Funcs
-	c.Lines += other.Lines
 }
 
 func (x mentalSort) Len() int { return len(x) }
