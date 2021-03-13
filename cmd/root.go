@@ -39,20 +39,23 @@ type MentalCtx struct {
 	Lines      int
 }
 
-var maxDepth = 1
+type mentalSort []MentalCtx
 
-// TODO accept string slice with --skip/-s
 var skip = map[string]struct{}{
-	".git":         {},
-	".github":      {},
-	".idea":        {},
-	"node_modules": {},
-	"vendor":       {},
-	"testdata":     {},
+	".git":     {},
+	".github":  {},
+	".idea":    {},
+	".vscode":  {},
+	"vendor":   {},
+	"testdata": {},
 }
 
-const tableFormat = `Path	Files	Globals	Constants	Interfaces	Structs	Others	Methods	Funcs	Lines
-{{ range . }}{{ .Path }}	{{ .Files }}	{{ .Globals }}	{{ .Consts }}	{{ .Interfaces }}	{{ .Structs }}	{{ .Others }}	{{ .Methods }}	{{ .Funcs }}	{{ .Lines }}
+var userMaxDepth = 1
+var userSkip = []string{}
+var userNoZero = false
+
+const tableFormat = `Path	Files	Lines	Global Vars	Constants	Interfaces	Structs	Other Types	Methods	Funcs
+{{ range . }}{{ .Path }}	{{ .Files }}	{{ .Lines }}	{{ .Globals }}	{{ .Consts }}	{{ .Interfaces }}	{{ .Structs }}	{{ .Others }}	{{ .Methods }}	{{ .Funcs }}
 {{ end }}
 `
 
@@ -72,18 +75,28 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.Flags().IntVarP(&maxDepth, "depth", "d", maxDepth, `Display an entry for all directories "depth" directories deep`)
+	rootCmd.Flags().IntVarP(&userMaxDepth, "depth", "d", userMaxDepth, `Display an entry for all directories "depth" directories deep`)
+	rootCmd.Flags().StringSliceVarP(&userSkip, "skip", "s", userSkip, "Directory names to skip. format: dir,dir")
+	rootCmd.Flags().BoolVar(&userNoZero, "no-zero", userNoZero, "Ignore golang source free directories")
+
+	rootCmd.Flags().Lookup("no-zero").NoOptDefVal = "true"
 }
 
 func runRoot(_ *cobra.Command, args []string) {
 	var err error
 
-	if maxDepth < 0 {
-		maxDepth = 1
+	if userMaxDepth < 0 {
+		userMaxDepth = 1
 	}
 
-	if maxDepth > 999 {
-		maxDepth = 999
+	if userMaxDepth > 999 {
+		userMaxDepth = 999
+	}
+
+	for _, s := range userSkip {
+		if _, exists := skip[s]; !exists {
+			skip[s] = struct{}{}
+		}
 	}
 
 	rootPath := filepath.Clean(args[0])
@@ -104,14 +117,9 @@ func runRoot(_ *cobra.Command, args []string) {
 			return nil
 		}
 
-		parts := strings.SplitN(strings.TrimPrefix(path, rootPath), string(filepath.Separator), maxDepth+2)
+		parts := strings.SplitN(strings.TrimPrefix(path, rootPath), string(filepath.Separator), userMaxDepth+2)
 
-		ctx, err := parseDir(path)
-		if err != nil {
-			return err
-		}
-
-		depth := maxDepth + 1
+		depth := userMaxDepth + 1
 		if len(parts) < depth {
 			depth = len(parts)
 		}
@@ -124,27 +132,31 @@ func runRoot(_ *cobra.Command, args []string) {
 					Path: workingPath,
 				}
 			}
+
+			ctx, err := parseDir(path)
+			if err != nil {
+				return err
+			}
+
 			mentalMap[workingPath].sum(ctx)
 		}
 
 		return nil
 	})
 	if err != nil {
-		fmt.Printf("error walking the Path %s: %s\n", rootPath, err)
+		fmt.Printf("error walking the path %s: %s\n", rootPath, err)
 		return
 	}
 
-	keys := make([]string, 0, len(mentalMap))
-	for key := range mentalMap {
-		keys = append(keys, key)
+	mentalSlice := make([]MentalCtx, 0, len(mentalMap))
+	for _, ctx := range mentalMap {
+		if userNoZero && ctx.Files == 0 {
+			continue
+		}
+		mentalSlice = append(mentalSlice, *ctx)
 	}
 
-	sort.Strings(keys)
-
-	mentalSlice := make([]*MentalCtx, 0, len(mentalMap))
-	for _, key := range keys {
-		mentalSlice = append(mentalSlice, mentalMap[key])
-	}
+	sort.Sort(mentalSort(mentalSlice))
 
 	out := tabwriter.NewWriter(os.Stdout, 1, 0, 2, ' ', 0)
 	tmpl, err := template.New("").Parse(tableFormat)
@@ -202,7 +214,7 @@ func parseDir(path string) (MentalCtx, error) {
 									ctx.Others++
 								}
 							default:
-								fmt.Printf("unknown type spec %v %T\n", s, s)
+								fmt.Printf("unhandled type spec %T\n", s)
 							}
 						}
 					case "const":
@@ -219,7 +231,7 @@ func parseDir(path string) (MentalCtx, error) {
 						ctx.Methods++
 					}
 				default:
-					fmt.Printf("unknown decl %v %T\n", d, d)
+					fmt.Printf("unhandled decl %T\n", d)
 				}
 			}
 			f := fset.File(file.Pos())
@@ -241,3 +253,12 @@ func (c *MentalCtx) sum(other MentalCtx) {
 	c.Funcs += other.Funcs
 	c.Lines += other.Lines
 }
+
+func (x mentalSort) Len() int { return len(x) }
+func (x mentalSort) Less(i, j int) bool {
+	iPath := strings.Replace(x[i].Path, string(filepath.Separator), "\x00", -1)
+	jPath := strings.Replace(x[j].Path, string(filepath.Separator), "\x00", -1)
+
+	return iPath < jPath
+}
+func (x mentalSort) Swap(i, j int) { x[i], x[j] = x[j], x[i] }
