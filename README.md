@@ -50,7 +50,7 @@ Right now, and maybe never, the tool makes no determination of what might be exc
 
 ### Single total report
 
-    domental my_source_path -d 0
+    gomental my_source_path -d 0
 
 ## License
 MIT
