@@ -30,6 +30,7 @@ type MentalCtx struct {
 	Path       string
 	Files      int
 	Globals    int
+	Consts     int
 	Interfaces int
 	Structs    int
 	Others     int
@@ -50,8 +51,8 @@ var skip = map[string]struct{}{
 	"testdata":     {},
 }
 
-const tableFormat = `Path	Files	Globals	Interfaces	Structs	Others	Methods	Funcs	Lines
-{{ range . }}{{ .Path }}	{{ .Files }}	{{ .Globals }}	{{ .Interfaces }}	{{ .Structs }}	{{ .Others }}	{{ .Methods }}	{{ .Funcs }}	{{ .Lines }}
+const tableFormat = `Path	Files	Globals	Constants	Interfaces	Structs	Others	Methods	Funcs	Lines
+{{ range . }}{{ .Path }}	{{ .Files }}	{{ .Globals }}	{{ .Consts }}	{{ .Interfaces }}	{{ .Structs }}	{{ .Others }}	{{ .Methods }}	{{ .Funcs }}	{{ .Lines }}
 {{ end }}
 `
 
@@ -183,7 +184,11 @@ func parseDir(path string) (MentalCtx, error) {
 				case *ast.GenDecl:
 					switch d.Tok.String() {
 					case "var":
-						ctx.Globals++
+						for _, spec := range d.Specs {
+							if _, ok := spec.(*ast.ValueSpec); ok {
+								ctx.Globals++
+							}
+						}
 					case "type":
 						for _, spec := range d.Specs {
 							switch s := spec.(type) {
@@ -200,7 +205,12 @@ func parseDir(path string) (MentalCtx, error) {
 								fmt.Printf("unknown type spec %v %T\n", s, s)
 							}
 						}
-					case "import": // ignored
+					case "const":
+						for _, spec := range d.Specs {
+							if _, ok := spec.(*ast.ValueSpec); ok {
+								ctx.Consts++
+							}
+						}
 					}
 				case *ast.FuncDecl:
 					if d.Recv == nil {
@@ -223,6 +233,7 @@ func parseDir(path string) (MentalCtx, error) {
 func (c *MentalCtx) sum(other MentalCtx) {
 	c.Files += other.Files
 	c.Globals += other.Globals
+	c.Consts += other.Consts
 	c.Interfaces += other.Interfaces
 	c.Structs += other.Structs
 	c.Others += other.Others
