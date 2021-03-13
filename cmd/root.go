@@ -77,6 +77,14 @@ func init() {
 func runRoot(_ *cobra.Command, args []string) {
 	var err error
 
+	if maxDepth < 0 {
+		maxDepth = 1
+	}
+
+	if maxDepth > 999 {
+		maxDepth = 999
+	}
+
 	rootPath := filepath.Clean(args[0])
 
 	mentalMap := make(map[string]*MentalCtx)
@@ -121,7 +129,7 @@ func runRoot(_ *cobra.Command, args []string) {
 		return nil
 	})
 	if err != nil {
-		fmt.Printf("error walking the Path %q: %v\n", rootPath, err)
+		fmt.Printf("error walking the Path %s: %s\n", rootPath, err)
 		return
 	}
 
@@ -189,7 +197,7 @@ func parseDir(path string) (MentalCtx, error) {
 									ctx.Others++
 								}
 							default:
-								fmt.Printf("%v %T\n", s, s)
+								fmt.Printf("unknown type spec %v %T\n", s, s)
 							}
 						}
 					case "import": // ignored
