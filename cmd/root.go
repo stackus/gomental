@@ -43,17 +43,17 @@ type MentalCtx struct {
 type mentalSort []MentalCtx
 
 var skip = map[string]struct{}{
-	".git":     {},
-	".github":  {},
-	".idea":    {},
-	".vscode":  {},
-	"vendor":   {},
-	"testdata": {},
+	".git":    {},
+	".github": {},
+	".idea":   {},
+	".vscode": {},
+	"vendor":  {},
 }
 
 var userMaxDepth = 1
 var userSkip []string
 var userNoZero = false
+var userTests = false
 
 const tableFormat = `Path	Packages	Files	Lines	Global Vars	Constants	Interfaces	Structs	Other Types	Methods	Funcs
 {{ range . }}{{ .Path }}	{{ .Pkgs }}	{{ .Files }}	{{ .Lines }}	{{ .Globals }}	{{ .Consts }}	{{ .Interfaces }}	{{ .Structs }}	{{ .Others }}	{{ .Methods }}	{{ .Funcs }}
@@ -78,8 +78,10 @@ func init() {
 	rootCmd.Flags().IntVarP(&userMaxDepth, "depth", "d", userMaxDepth, `Display an entry for all directories "depth" directories deep`)
 	rootCmd.Flags().StringSliceVarP(&userSkip, "skip", "s", userSkip, "Directory names to skip. format: dir,dir")
 	rootCmd.Flags().BoolVar(&userNoZero, "no-zero", userNoZero, "Ignore golang source free directories")
+	rootCmd.Flags().BoolVar(&userTests, "with-tests", userTests, "Include test files")
 
 	rootCmd.Flags().Lookup("no-zero").NoOptDefVal = "true"
+	rootCmd.Flags().Lookup("with-tests").NoOptDefVal = "true"
 }
 
 func runRoot(_ *cobra.Command, args []string) {
@@ -91,6 +93,10 @@ func runRoot(_ *cobra.Command, args []string) {
 
 	if userMaxDepth > 999 {
 		userMaxDepth = 999
+	}
+
+	if !userTests {
+		userSkip = append(userSkip, "testdata")
 	}
 
 	for _, s := range userSkip {
@@ -181,6 +187,9 @@ func parseDir(path string) (MentalCtx, error) {
 	fset := token.NewFileSet()
 
 	pkgs, err := parser.ParseDir(fset, path, func(info fs.FileInfo) bool {
+		if userTests {
+			return true
+		}
 		return !strings.HasSuffix(info.Name(), "test.go")
 	}, parser.ParseComments)
 	if err != nil {
